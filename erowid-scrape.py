@@ -1,56 +1,45 @@
 import requests
-from bs4 import BeautifulSoup 
+import os
+from bs4 import BeautifulSoup
 
-#-=-=-=-=-=-=-=-=-=-=-=-=-=-
-# CONSTANTS
-#-=-=-=-=-=-=-=-=-=-=-=-=-=-
+EROWID_BASE_URI = 'https://erowid.org/experiences/exp.php'
+EXP_COUNT = 10000
 
-DRUG_LIST = ['Methamphetamine', 'Cocaine', 'Codeine']
-EROWID_BASE_URI = 'https://erowid.org/experiences/'
-EROWID_EXPERIENCE_ENDPOINT = 'https://erowid.org/'
-VAULT_ENDPOINT = 'exp_list.shtml'
+#helper function that takes response body and extracts just the user drug experience
+def extract_experience_text(text):
+	try:
+		begin_delimiter = '<!-- Start Body -->'
+		begin = text.index(begin_delimiter) + len(begin_delimiter)
+		end = text.index('<!-- End Body -->')
+		return text[begin:end].strip()
+	except ValueError:
+		return ''
 
 
-#-=-=-=-=-=-=-=-=-=-=-=-=-=-
-# SCRAPE
-#-=-=-=-=-=-=-=-=-=-=-=-=-=-
+for index in xrange(1, EXP_COUNT):
 
-VAULT_URI = EROWID_BASE_URI + VAULT_ENDPOINT
-req = requests.get(VAULT_URI)
-soup = BeautifulSoup(req.text, 'html5lib')
+	try:
+		data = {'ID': index}
 
-#iterate over links to "First Times" pages
-#thoguht process was that "First Times" would hold terms more indicative of drug effects 
-#rather than long-term stories and experiences 
-linkDict = {}
-for link in soup.findAll('a', href= True, text= "First Times"):
-	linkText = link['href']
-	print linkText
-	#Pull drug name from URL
-	splitLinks = linkText.split('_')
-	drug = ' '.join(linkText.split('_')[1:-2])
-	linkDict[drug] = EROWID_BASE_URI + linkText 
+		responseText = requests.get(EROWID_BASE_URI, data).text
+		experienceText = extract_experience_text(responseText)
+		soup = BeautifulSoup(responseText, "html5lib")
+		drug = soup.find('div', {'class': 'substance'}).getText().strip().lower()
 
-#@KEY: drug name 
-#@VALUE: list of URIs linking to experiences
-experienceLinkDict = {}
-for drug, uri in linkDict.iteritems(): 
-	req = requests.get(uri)
-	soup = BeautifulSoup(req.text)
+		print drug,
+		#write experience to folder
+		#TODO found problem! people use drug-a/drug-b to denote combination
+		#since we plug the string straight in, it thinks that's a nested directory
+		#MUST RESCRAPE! 
+		folderPath = './experiences/' + drug
 
-	experienceTable = soup.find("table", {"class": "exp-list-table"})
-	#scrape rows in table
-	#First 2 rows are useless
-	for index, tableRow in enumerate(experienceTable.findAll('tr')):
-		if index > 1:
-			linkList = []
-			columns = tableRow.findAll('td')
-			linkColumn = columns[1]
-			experienceLink = linkColumn.find('a', href= True)
-			experienceLink = EROWID_EXPERIENCE_ENDPOINT + experienceLink['href'][1:] 
-			print experienceLink
-			linkList.append(experienceLink)
+		if not os.path.exists(folderPath):
+			os.makedirs(folderPath)
 
-	experienceLinkDict[drug] = linkList
+		with open('%s/%i.txt' % (folderPath, index), 'w') as outputFile:
+			outputFile.write(experienceText)
 
-print experienceLinkDict
+		print "File written..."
+
+	except:
+		print "FAILED"
